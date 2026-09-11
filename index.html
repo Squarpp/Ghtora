@@ -11,7 +11,6 @@
     <style>
         /* Frutiger Aero Aesthetic Styling */
         body {
-            /* Classic sky blue and lush green gradient with faux light leaks */
             background: 
                 radial-gradient(circle at 15% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 50%),
                 radial-gradient(circle at 85% 30%, rgba(180, 240, 255, 0.6) 0%, transparent 40%),
@@ -29,7 +28,6 @@
         }
         
         .container {
-            /* Glassmorphism panel */
             background: linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.2) 100%);
             border: 1px solid rgba(255, 255, 255, 0.8);
             box-shadow: 
@@ -46,7 +44,6 @@
             position: relative;
         }
 
-        /* Container Reflection */
         .container::before {
             content: '';
             position: absolute;
@@ -122,7 +119,7 @@
             color: #004d7a;
             text-shadow: 0 1px 1px rgba(255,255,255,0.6);
         }
-        input[type="text"], input[type="number"] {
+        input[type="text"], input[type="number"], select {
             width: 100%;
             padding: 9px;
             border: 1px solid #8abccc;
@@ -136,12 +133,11 @@
             color: #113647;
             transition: border 0.2s;
         }
-        input[type="text"]:focus, input[type="number"]:focus {
+        input[type="text"]:focus, input[type="number"]:focus, select:focus {
             border-color: #05abe0;
             box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.04), 0 0 6px rgba(5, 171, 224, 0.4);
         }
         
-        /* 2000s Glossy Gel Button */
         button.action-btn {
             background: linear-gradient(180deg, #74cbf5 0%, #30a9e2 49%, #0981be 50%, #159ce0 100%);
             border: 1px solid #065b87;
@@ -323,6 +319,17 @@
             <label>Charted By</label>
             <input type="text" id="json-charted" value="Unknown">
         </div>
+
+        <!-- Selector de instrumento -->
+        <div class="input-group">
+            <label>Charting Mode / Instrument</label>
+            <select id="json-instrument">
+                <option value="guitar">Guitar (Lead / Single)</option>
+                <option value="bass">Bass</option>
+                <option value="rhythm">Rhythm</option>
+                <option value="dynamic" style="font-weight: bold; color: #005a8c;">Custom Lead (Dynamic Gaps)</option>
+            </select>
+        </div>
     </div>
 
     <button id="export-btn" class="action-btn" onclick="exportFolder()">Download Ready Folder</button>
@@ -466,7 +473,6 @@
             return;
         }
 
-        // Preview BPM detection for Initial BPM UI
         if (loadedFiles.notesType === 'chart') {
             const chartText = await loadedFiles.notesFile.text();
             const firstBpmMatch = chartText.match(/\d+\s*=\s*B\s+(\d+)/);
@@ -546,23 +552,22 @@
 
             statusEl.innerText = "Extracting BPM Map and generating bpm.csv...";
             let parsedResult = null;
+            const selectedInstrument = document.getElementById('json-instrument').value;
 
             if (loadedFiles.notesType === 'chart') {
                 const chartContent = await loadedFiles.notesFile.text();
-                parsedResult = processChartFile(chartContent);
+                parsedResult = processChartFile(chartContent, selectedInstrument);
             } else if (loadedFiles.notesType === 'mid') {
                 const arrayBuffer = await loadedFiles.notesFile.arrayBuffer();
                 const midiData = new Midi(arrayBuffer);
-                parsedResult = processMidiFile(midiData);
+                parsedResult = processMidiFile(midiData, selectedInstrument);
             }
 
             if (parsedResult) {
-                // Save bpm.csv
                 if (parsedResult.bpmCsv) {
                     zip.file("bpm.csv", parsedResult.bpmCsv);
                 }
 
-                // Save difficulty CSVs
                 statusEl.innerText = "Generating CSV notes files...";
                 const difficulties = ["UNFAIR", "HARD", "FAIR", "EASY"];
                 difficulties.forEach(diff => {
@@ -601,9 +606,6 @@
         }
     }
 
-    // ==========================================
-    // MULTIPLE AUDIO MIXING ENGINE
-    // ==========================================
     async function mixMultipleAudioToWav(audioFilesArray) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         const ctx = new AudioContext();
@@ -641,20 +643,20 @@
             view = new DataView(bufferArray),
             channels = [], i, sample, offset = 0, pos = 0;
 
-        setUint32(0x46464952); // "RIFF"
+        setUint32(0x46464952);
         setUint32(length - 8); 
-        setUint32(0x45564157); // "WAVE"
+        setUint32(0x45564157);
 
-        setUint32(0x20746d66); // "fmt " chunk
+        setUint32(0x20746d66);
         setUint32(16); 
-        setUint16(1); // PCM
+        setUint16(1); 
         setUint16(numOfChan);
         setUint32(buffer.sampleRate);
         setUint32(buffer.sampleRate * 2 * numOfChan);
         setUint16(numOfChan * 2);
         setUint16(16);
 
-        setUint32(0x61746164); // "data" chunk
+        setUint32(0x61746164);
         setUint32(length - pos - 4); 
 
         for(i = 0; i < buffer.numberOfChannels; i++) {
@@ -679,11 +681,10 @@
     // ==========================================
     // CHART & BPM PARSER (.chart)
     // ==========================================
-    function processChartFile(content) {
+    function processChartFile(content, instrument = 'guitar') {
         const resMatch = content.match(/Resolution\s*=\s*(\d+)/);
         const resolution = resMatch ? parseInt(resMatch[1]) : 192;
         
-        // Extract SyncTrack (BPM Events)
         const syncTrack = [];
         const syncRegex = /(\d+)\s*=\s*B\s+(\d+)/g;
         let match;
@@ -696,7 +697,6 @@
             syncTrack.push({ tick: 0, bpm: 120 });
         }
 
-        // Helper: Convert tick to real time in seconds
         function tickToRealTime(targetTick) {
             let time = 0; 
             let lastTick = 0; 
@@ -714,7 +714,6 @@
             return time;
         }
 
-        // Helper: Convert real time in seconds to 16th grid tick (accumulative based on BPM map)
         function realTimeTo16th(targetTime) {
             let accumulatedTime = 0;
             let accumulated16th = 0;
@@ -736,7 +735,6 @@
             return accumulated16th;
         }
 
-        // Generate bpm.csv content
         const bpmCsvLines = syncTrack.map(ev => {
             const timeSec = tickToRealTime(ev.tick);
             const ra16th = realTimeTo16th(timeSec);
@@ -744,49 +742,60 @@
         });
         const bpmCsv = bpmCsvLines.join("\n");
 
-        // Parse Difficulties
-        const difficulties = [
-            { name: "UNFAIR", chartDiff: "ExpertSingle" },
-            { name: "HARD", chartDiff: "HardSingle" },
-            { name: "FAIR", chartDiff: "MediumSingle" },
-            { name: "EASY", chartDiff: "EasySingle" }
+        const instrumentsMap = {
+            guitar: ["Single"],
+            bass: ["Bass", "DoubleBass"],
+            rhythm: ["Rhythm"],
+            drums: ["Drums"],
+            keys: ["Keyboard"],
+            vocals: ["Vocals"]
+        };
+        const dynamicPriority = ["guitar", "bass", "drums", "rhythm", "keys", "vocals"];
+
+        const baseDifficulties = [
+            { name: "UNFAIR", diff: "Expert" },
+            { name: "HARD", diff: "Hard" },
+            { name: "FAIR", diff: "Medium" },
+            { name: "EASY", diff: "Easy" }
         ];
 
-        const charts = {};
-
-        difficulties.forEach(diff => {
-            const diffRegex = new RegExp(`\\[${diff.chartDiff}\\][\\s\\S]*?}`);
-            let diffMatch = content.match(diffRegex);
-            if (!diffMatch) return;
+        function extractTrackNotes(suffixList, diffObj) {
+            let diffMatch = null;
+            for (const suffix of suffixList) {
+                const chartDiff = `${diffObj.diff}${suffix}`;
+                const diffRegex = new RegExp(`\\[${chartDiff}\\][\\s\\S]*?}`);
+                diffMatch = content.match(diffRegex);
+                if (diffMatch) break;
+            }
+            if (!diffMatch) return [];
 
             const spRegex = /(\d+)\s*=\s*S\s+2\s+(\d+)/g;
             const starPowerPhrases = [];
-            while ((match = spRegex.exec(diffMatch[0])) !== null) {
-                starPowerPhrases.push({ tick: parseInt(match[1]), len: parseInt(match[2]) });
+            let spMatch;
+            while ((spMatch = spRegex.exec(diffMatch[0])) !== null) {
+                starPowerPhrases.push({ tick: parseInt(spMatch[1]), len: parseInt(spMatch[2]) });
             }
 
             const eventsByTick = {};
             const noteRegex = /(\d+)\s*=\s*N\s+(\d+)\s+(\d+)/g;
-            
-            while ((match = noteRegex.exec(diffMatch[0])) !== null) {
-                const tick = parseInt(match[1]);
-                const val = parseInt(match[2]);
-                const len = parseInt(match[3]);
+            let nMatch;
+            while ((nMatch = noteRegex.exec(diffMatch[0])) !== null) {
+                const tick = parseInt(nMatch[1]);
+                const val = parseInt(nMatch[2]);
+                const len = parseInt(nMatch[3]);
                 if (!eventsByTick[tick]) eventsByTick[tick] = { notes: [] };
-                
                 if (val >= 0 && val <= 4) {
                     eventsByTick[tick].notes.push({ col: val, len: len });
                 }
             }
 
-            const outLines = [];
+            const parsedNotes = [];
             const sortedTicks = Object.keys(eventsByTick).map(Number).sort((a, b) => a - b);
             
             for (const tick of sortedTicks) {
                 const ev = eventsByTick[tick];
                 const timeStart = tickToRealTime(tick);
                 const raTicks = realTimeTo16th(timeStart);
-                
                 const isStarPower = starPowerPhrases.some(sp => tick >= sp.tick && tick < sp.tick + sp.len);
                 const noteType = isStarPower ? 1 : 0;
 
@@ -794,11 +803,88 @@
                     const timeEnd = tickToRealTime(tick + n.len);
                     const raEndTicks = realTimeTo16th(timeEnd);
                     const raLen = raEndTicks - raTicks;
-                    outLines.push(`${noteType},${n.col},${Number(raTicks.toFixed(2))},${Number(raLen.toFixed(2))}`);
+                    parsedNotes.push({ tipo: noteType, carril: n.col, tiempoFinal: Number(raTicks.toFixed(2)), duracionFinal: Number(raLen.toFixed(2)) });
                 }
             }
+            return parsedNotes;
+        }
 
-            if (outLines.length > 0) charts[diff.name] = outLines.join("\n");
+        const charts = {};
+
+        baseDifficulties.forEach(diffObj => {
+            if (instrument !== 'dynamic') {
+                const suffixes = instrumentsMap[instrument] || instrumentsMap.guitar;
+                const notes = extractTrackNotes(suffixes, diffObj);
+                if (notes.length > 0) {
+                    charts[diffObj.name] = notes.map(n => `${n.tipo},${n.carril},${n.tiempoFinal},${n.duracionFinal}`).join("\n");
+                }
+            } else {
+                let finalNotes = [];
+                let tracksData = {};
+                dynamicPriority.forEach(inst => {
+                    tracksData[inst] = extractTrackNotes(instrumentsMap[inst], diffObj) || [];
+                });
+
+                let primary = tracksData["guitar"];
+                if (!primary || primary.length === 0) {
+                    for (let inst of dynamicPriority) {
+                        if (tracksData[inst].length > 0) {
+                            finalNotes = tracksData[inst];
+                            break;
+                        }
+                    }
+                } else {
+                    finalNotes = [...primary];
+                    finalNotes.sort((a, b) => a.tiempoFinal - b.tiempoFinal);
+                    
+                    const threshold = 32; // 8 beats = 32 semicorcheas (16ths)
+                    const buffer = 2; // Buffer de medio beat (2 semicorcheas) para no pisar notas
+                    
+                    for (let i = 0; i < finalNotes.length - 1; i++) {
+                        let currentNote = finalNotes[i];
+                        let nextNote = finalNotes[i+1];
+                        let gapStart = currentNote.tiempoFinal + currentNote.duracionFinal + buffer;
+                        let gapEnd = nextNote.tiempoFinal - buffer;
+                        
+                        if ((gapEnd - gapStart) >= threshold) {
+                            for (let inst of dynamicPriority.slice(1)) {
+                                let candNotes = tracksData[inst].filter(n => n.tiempoFinal >= gapStart && (n.tiempoFinal + n.duracionFinal) <= gapEnd);
+                                if (candNotes.length > 0) {
+                                    finalNotes.push(...candNotes);
+                                    break; 
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (finalNotes[0].tiempoFinal >= threshold) {
+                         let gapEnd = finalNotes[0].tiempoFinal - buffer;
+                         for (let inst of dynamicPriority.slice(1)) {
+                             let candNotes = tracksData[inst].filter(n => (n.tiempoFinal + n.duracionFinal) <= gapEnd);
+                             if (candNotes.length > 0) {
+                                 finalNotes.push(...candNotes);
+                                 break;
+                             }
+                         }
+                    }
+                    
+                    let lastNote = finalNotes[finalNotes.length - 1];
+                    let gapStart = lastNote.tiempoFinal + lastNote.duracionFinal + buffer;
+                    for (let inst of dynamicPriority.slice(1)) {
+                         let candNotes = tracksData[inst].filter(n => n.tiempoFinal >= gapStart);
+                         if (candNotes.length > 0) {
+                             finalNotes.push(...candNotes);
+                             break;
+                         }
+                    }
+
+                    finalNotes.sort((a, b) => a.tiempoFinal - b.tiempoFinal);
+                }
+
+                if (finalNotes.length > 0) {
+                    charts[diffObj.name] = finalNotes.map(n => `${n.tipo},${n.carril},${n.tiempoFinal},${n.duracionFinal}`).join("\n");
+                }
+            }
         });
 
         return { bpmCsv, charts };
@@ -807,13 +893,12 @@
     // ==========================================
     // MIDI & BPM PARSER (.mid)
     // ==========================================
-    function processMidiFile(midi) {
+    function processMidiFile(midi, instrument = 'guitar') {
         const tempos = midi.header.tempos || [];
         if (tempos.length === 0) {
             tempos.push({ ticks: 0, bpm: 120, time: 0 });
         }
 
-        // Helper: Convert time to 16th grid tick based on BPM map
         function timeTo16th(targetTime) {
             let accumulated16th = 0;
             let accumulatedTime = 0;
@@ -835,7 +920,6 @@
             return accumulated16th;
         }
 
-        // Generate bpm.csv content
         const bpmCsvLines = tempos.map(t => {
             const ra16th = timeTo16th(t.time);
             return `0,0,${Number(ra16th.toFixed(2))},${t.bpm.toFixed(2)}`;
@@ -849,14 +933,23 @@
             { name: "EASY", range: "60-64" }
         ];
 
-        const track = midi.tracks.find(t => t.name.includes('PART GUITAR') || t.name.includes('T1 GTR')) || midi.tracks[0];
-        if (!track || track.notes.length === 0) return { bpmCsv, charts: {} };
+        const trackNames = {
+            guitar: ['PART GUITAR', 'T1 GTR'],
+            bass: ['PART BASS', 'T1 BASS'],
+            rhythm: ['PART RHYTHM', 'T1 RHYTHM'],
+            drums: ['PART DRUMS', 'T1 DRUMS'],
+            keys: ['PART KEYS', 'T1 KEYS'],
+            vocals: ['PART VOCALS']
+        };
+        const dynamicPriority = ["guitar", "bass", "drums", "rhythm", "keys", "vocals"];
 
-        const spPhrases = track.notes.filter(n => n.midi === 116);
-        const charts = {};
+        function extractMidiNotes(instKey, diffObj) {
+            const targetNames = trackNames[instKey] || trackNames.guitar;
+            const track = midi.tracks.find(t => t.name && targetNames.some(name => t.name.toUpperCase().includes(name)));
+            if (!track || track.notes.length === 0) return [];
 
-        difficulties.forEach(diff => {
-            const [minMidi, maxMidi] = diff.range.split('-').map(Number);
+            const [minMidi, maxMidi] = diffObj.range.split('-').map(Number);
+            const spPhrases = track.notes.filter(n => n.midi === 116);
             let listaNotas = [];
 
             track.notes.forEach(note => {
@@ -885,8 +978,84 @@
                     }
                     if (notaActual.duracionFinal < 1.5) notaActual.duracionFinal = 0;
                 }
+            }
+            return listaNotas;
+        }
 
-                charts[diff.name] = listaNotas.map(n => `${n.tipo},${n.carril},${n.tiempoFinal.toFixed(1)},${n.duracionFinal.toFixed(1)}`).join("\n");
+        const charts = {};
+
+        difficulties.forEach(diff => {
+            if (instrument !== 'dynamic') {
+                const notes = extractMidiNotes(instrument, diff);
+                if (notes.length > 0) {
+                    charts[diff.name] = notes.map(n => `${n.tipo},${n.carril},${n.tiempoFinal.toFixed(1)},${n.duracionFinal.toFixed(1)}`).join("\n");
+                }
+            } else {
+                let finalNotes = [];
+                let tracksData = {};
+                dynamicPriority.forEach(inst => {
+                    tracksData[inst] = extractMidiNotes(inst, diff) || [];
+                });
+
+                let primary = tracksData["guitar"];
+                if (!primary || primary.length === 0) {
+                    for (let inst of dynamicPriority) {
+                        if (tracksData[inst].length > 0) {
+                            finalNotes = tracksData[inst];
+                            break;
+                        }
+                    }
+                } else {
+                    finalNotes = [...primary];
+                    finalNotes.sort((a, b) => a.tiempoFinal - b.tiempoFinal);
+                    
+                    const threshold = 32; // 8 beats = 32 semicorcheas
+                    const buffer = 2; // medio beat para no encimar
+                    
+                    for (let i = 0; i < finalNotes.length - 1; i++) {
+                        let currentNote = finalNotes[i];
+                        let nextNote = finalNotes[i+1];
+                        let gapStart = currentNote.tiempoFinal + currentNote.duracionFinal + buffer;
+                        let gapEnd = nextNote.tiempoFinal - buffer;
+                        
+                        if ((gapEnd - gapStart) >= threshold) {
+                            for (let inst of dynamicPriority.slice(1)) {
+                                let candNotes = tracksData[inst].filter(n => n.tiempoFinal >= gapStart && (n.tiempoFinal + n.duracionFinal) <= gapEnd);
+                                if (candNotes.length > 0) {
+                                    finalNotes.push(...candNotes);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (finalNotes[0].tiempoFinal >= threshold) {
+                         let gapEnd = finalNotes[0].tiempoFinal - buffer;
+                         for (let inst of dynamicPriority.slice(1)) {
+                             let candNotes = tracksData[inst].filter(n => (n.tiempoFinal + n.duracionFinal) <= gapEnd);
+                             if (candNotes.length > 0) {
+                                 finalNotes.push(...candNotes);
+                                 break;
+                             }
+                         }
+                    }
+                    
+                    let lastNote = finalNotes[finalNotes.length - 1];
+                    let gapStart = lastNote.tiempoFinal + lastNote.duracionFinal + buffer;
+                    for (let inst of dynamicPriority.slice(1)) {
+                         let candNotes = tracksData[inst].filter(n => n.tiempoFinal >= gapStart);
+                         if (candNotes.length > 0) {
+                             finalNotes.push(...candNotes);
+                             break;
+                         }
+                    }
+
+                    finalNotes.sort((a, b) => a.tiempoFinal - b.tiempoFinal);
+                }
+
+                if (finalNotes.length > 0) {
+                    charts[diff.name] = finalNotes.map(n => `${n.tipo},${n.carril},${n.tiempoFinal.toFixed(1)},${n.duracionFinal.toFixed(1)}`).join("\n");
+                }
             }
         });
 
